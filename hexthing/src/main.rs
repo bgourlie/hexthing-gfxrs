@@ -246,7 +246,7 @@ fn main() {
     ).expect("Can't create pipeline layout");
     let pipeline = {
         let vs_module = {
-            let glsl = fs::read_to_string("quad/data/quad.vert").unwrap();
+            let glsl = fs::read_to_string("src/shaders/hex.vert").expect("Vertex shader not found");
             let spirv: Vec<u8> = glsl_to_spirv::compile(&glsl, glsl_to_spirv::ShaderType::Vertex)
                 .unwrap()
                 .bytes()
@@ -255,7 +255,7 @@ fn main() {
             device.create_shader_module(&spirv).unwrap()
         };
         let fs_module = {
-            let glsl = fs::read_to_string("quad/data/quad.frag").unwrap();
+            let glsl = fs::read_to_string("src/shaders/hex.frag").expect("Fragment shader not found");
             let spirv: Vec<u8> = glsl_to_spirv::compile(&glsl, glsl_to_spirv::ShaderType::Fragment)
                 .unwrap()
                 .bytes()
