@@ -17,8 +17,6 @@ extern crate gfx_backend_dx12 as back;
     feature = "gl"
 )))]
 extern crate gfx_backend_empty as back;
-#[cfg(feature = "gl")]
-extern crate gfx_backend_gl as back;
 #[cfg(feature = "metal")]
 extern crate gfx_backend_metal as back;
 #[cfg(feature = "vulkan")]
@@ -241,8 +239,6 @@ impl<B: Backend> RendererState<B> {
 
         while running {
             {
-                #[cfg(feature = "gl")]
-                let backend = &self.backend;
 
                 self.window.events_loop.poll_events(|event| {
                     if let winit::Event::WindowEvent { event, .. } = event {
@@ -258,10 +254,6 @@ impl<B: Backend> RendererState<B> {
                             }
                             | winit::WindowEvent::CloseRequested => running = false,
                             winit::WindowEvent::Resized(dims) => {
-                                #[cfg(feature = "gl")]
-                                backend.surface.get_window_t().resize(dims.to_physical(
-                                    backend.surface.get_window_t().get_hidpi_factor(),
-                                ));
                                 recreate_swapchain = true;
                             }
                             _ => (),

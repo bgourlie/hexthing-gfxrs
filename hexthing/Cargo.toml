@@ -6,7 +6,6 @@ authors = ["W. Brian Gourlie <bgourlie@gmail.com>"]
 [features]
 default = []
 metal = ["gfx-backend-metal"]
-gl = ["gfx-backend-gl"]
 dx12 = ["gfx-backend-dx12"]
 vulkan = ["gfx-backend-vulkan"]
 
@@ -20,12 +19,6 @@ gfx-hal = { path = "../gfx/src/hal", version = "0.1" }
 gfx-backend-empty = { path = "../gfx/src/backend/empty", version = "0.1" }
 nalgebra = "^0.16.5"
 specs = "^0.12.3"
-
-[dependencies.gfx-backend-gl]
-path = "../gfx/src/backend/gl"
-version = "^0.1"
-features = ["glutin"]
-optional = true
 
 [dependencies.gfx-backend-vulkan]
 path = "../gfx/src/backend/vulkan"

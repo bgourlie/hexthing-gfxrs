@@ -1,5 +1,5 @@
 #[derive(Debug)]
-struct RenderableDefinition {
+pub struct RenderableDefinition {
     id: String,
     fragment_shader: String,
     vertex_shader: String,
@@ -9,7 +9,7 @@ struct RenderableDefinition {
 }
 
 #[derive(Debug)]
-struct InputDescriptor {
+pub struct InputDescriptor {
     location: u32,
     buffer_type: u32,
     buffer_data_type: u32,
