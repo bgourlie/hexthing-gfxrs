@@ -27,31 +27,21 @@ extern crate gfx_backend_vulkan as back;
 #[cfg(feature = "gl")]
 use back::glutin::GlContext;
 
-#[macro_use]
-extern crate log;
-extern crate env_logger;
 extern crate gfx_hal as hal;
 extern crate glsl_to_spirv;
-extern crate image;
 extern crate winit;
 
-struct Dimensions<T> {
-    width: T,
-    height: T,
-}
-
 use std::cell::RefCell;
-use std::io::Cursor;
 use std::mem::size_of;
 use std::rc::Rc;
 
 use hal::{
     buffer, command, format as f, image as i, memory as m, pass, pool, pso, window::Extent2D,
-    Adapter, Backbuffer, Backend, DescriptorPool, Device, FrameSync, Instance, Limits, MemoryType,
+    Adapter, Backbuffer, Backend, DescriptorPool, Device, FrameSync, Instance, MemoryType,
     PhysicalDevice, Primitive, QueueGroup, Surface, Swapchain, SwapchainConfig,
 };
 
-use hal::format::{AsFormat, ChannelType, Rgba8Srgb as ColorFormat, Swizzle};
+use hal::format::{ChannelType, Swizzle};
 use hal::pass::Subpass;
 use hal::pso::{PipelineStage, ShaderStageFlags};
 use hal::queue::Submission;
@@ -68,33 +58,24 @@ const DIMS: Extent2D = Extent2D {
 #[derive(Debug, Clone, Copy)]
 struct Vertex {
     a_pos: [f32; 2],
-    a_uv: [f32; 2],
 }
 
 const QUAD: [Vertex; 6] = [
     Vertex {
         a_pos: [-0.5, 0.33],
-        a_uv: [0.0, 1.0],
     },
-    Vertex {
-        a_pos: [0.5, 0.33],
-        a_uv: [1.0, 1.0],
-    },
+    Vertex { a_pos: [0.5, 0.33] },
     Vertex {
         a_pos: [0.5, -0.33],
-        a_uv: [1.0, 0.0],
     },
     Vertex {
         a_pos: [-0.5, 0.33],
-        a_uv: [0.0, 1.0],
     },
     Vertex {
         a_pos: [0.5, -0.33],
-        a_uv: [1.0, 0.0],
     },
     Vertex {
         a_pos: [-0.5, -0.33],
-        a_uv: [0.0, 0.0],
     },
 ];
 
@@ -118,7 +99,6 @@ impl SurfaceTrait for <back::Backend as hal::Backend>::Surface {
 
 struct RendererState<B: Backend> {
     uniform_desc_pool: Option<B::DescriptorPool>,
-    img_desc_pool: Option<B::DescriptorPool>,
     swapchain: Option<SwapchainState<B>>,
     device: Rc<RefCell<DeviceState<B>>>,
     backend: BackendState<B>,
@@ -129,15 +109,6 @@ struct RendererState<B: Backend> {
     pipeline: PipelineState<B>,
     framebuffer: FramebufferState<B>,
     viewport: pso::Viewport,
-    image: ImageState<B>,
-}
-
-#[derive(Debug)]
-enum Color {
-    Red,
-    Green,
-    Blue,
-    Alpha,
 }
 
 impl<B: Backend> RendererState<B> {
@@ -146,26 +117,6 @@ impl<B: Backend> RendererState<B> {
             backend.adapter.adapter.take().unwrap(),
             &backend.surface,
         )));
-
-        let image_desc = DescSetLayout::new(
-            Rc::clone(&device),
-            vec![
-                pso::DescriptorSetLayoutBinding {
-                    binding: 0,
-                    ty: pso::DescriptorType::SampledImage,
-                    count: 1,
-                    stage_flags: ShaderStageFlags::FRAGMENT,
-                    immutable_samplers: false,
-                },
-                pso::DescriptorSetLayoutBinding {
-                    binding: 1,
-                    ty: pso::DescriptorType::Sampler,
-                    count: 1,
-                    stage_flags: ShaderStageFlags::FRAGMENT,
-                    immutable_samplers: false,
-                },
-            ],
-        );
 
         let uniform_desc = DescSetLayout::new(
             Rc::clone(&device),
@@ -177,24 +128,6 @@ impl<B: Backend> RendererState<B> {
                 immutable_samplers: false,
             }],
         );
-
-        let mut img_desc_pool = device
-            .borrow()
-            .device
-            .create_descriptor_pool(
-                1, // # of sets
-                &[
-                    pso::DescriptorRangeDesc {
-                        ty: pso::DescriptorType::SampledImage,
-                        count: 1,
-                    },
-                    pso::DescriptorRangeDesc {
-                        ty: pso::DescriptorType::Sampler,
-                        count: 1,
-                    },
-                ],
-            )
-            .ok();
 
         let mut uniform_desc_pool = device
             .borrow()
@@ -208,17 +141,11 @@ impl<B: Backend> RendererState<B> {
             )
             .ok();
 
-        let image_desc = image_desc.create_desc_set(img_desc_pool.as_mut().unwrap());
         let uniform_desc = uniform_desc.create_desc_set(uniform_desc_pool.as_mut().unwrap());
 
         println!("Memory types: {:?}", backend.adapter.memory_types);
 
-        const IMAGE_LOGO: &'static [u8] = include_bytes!("shaders/logo.png");
-        let img = image::load(Cursor::new(&IMAGE_LOGO[..]), image::PNG)
-            .unwrap()
-            .to_rgba();
-
-        let mut staging_pool = device
+        let staging_pool = device
             .borrow()
             .device
             .create_command_pool_typed(
@@ -227,15 +154,6 @@ impl<B: Backend> RendererState<B> {
                 16,
             )
             .expect("Can't create staging command pool");
-
-        let image = ImageState::new::<hal::Graphics>(
-            image_desc,
-            &img,
-            &backend.adapter,
-            buffer::Usage::TRANSFER_SRC,
-            &mut device.borrow_mut(),
-            &mut staging_pool,
-        );
 
         let vertex_buffer = BufferState::new::<Vertex>(
             Rc::clone(&device),
@@ -247,12 +165,10 @@ impl<B: Backend> RendererState<B> {
         let uniform = Uniform::new(
             Rc::clone(&device),
             &backend.adapter.memory_types,
-            &[1f32, 1.0f32, 1.0f32, 1.0f32],
+            &[1.0f32, 0.0f32, 0.0f32, 1.0f32],
             uniform_desc,
             0,
         );
-
-        image.wait_for_transfer_completion();
 
         device
             .borrow()
@@ -270,7 +186,7 @@ impl<B: Backend> RendererState<B> {
         );
 
         let pipeline = PipelineState::new(
-            vec![image.get_layout(), uniform.get_layout()],
+            vec![uniform.get_layout()],
             render_pass.render_pass.as_ref().unwrap(),
             Rc::clone(&device),
         );
@@ -281,8 +197,6 @@ impl<B: Backend> RendererState<B> {
             window,
             backend,
             device,
-            image,
-            img_desc_pool,
             uniform_desc_pool,
             vertex_buffer,
             uniform,
@@ -314,7 +228,7 @@ impl<B: Backend> RendererState<B> {
         );
 
         self.pipeline = PipelineState::new(
-            vec![self.image.get_layout(), self.uniform.get_layout()],
+            vec![self.uniform.get_layout()],
             self.render_pass.render_pass.as_ref().unwrap(),
             Rc::clone(&self.device),
         );
@@ -341,30 +255,12 @@ impl<B: Backend> RendererState<B> {
         let mut running = true;
         let mut recreate_swapchain = false;
 
-        let mut r = 1.0f32;
-        let mut g = 1.0f32;
-        let mut b = 1.0f32;
-        let mut a = 1.0f32;
-
-        let mut cr = 0.8;
-        let mut cg = 0.8;
-        let mut cb = 0.8;
-
-        let mut cur_color = Color::Red;
-        let mut cur_value: u32 = 0;
-
-        println!("\nInstructions:");
-        println!("\tChoose whether to change the (R)ed, (G)reen or (B)lue color by pressing the appropriate key.");
-        println!("\tType in the value you want to change it to, where 0 is nothing, 255 is normal and 510 is double, ect.");
-        println!("\tThen press C to change the (C)lear colour or (Enter) for the image color.");
-        println!(
-            "\tSet {:?} color to: {} (press enter/C to confirm)",
-            cur_color, cur_value
-        );
+        let cr = 0.0;
+        let cg = 0.0;
+        let cb = 0.0;
 
         while running {
             {
-                let uniform = &mut self.uniform;
                 #[cfg(feature = "gl")]
                 let backend = &self.backend;
 
@@ -387,103 +283,6 @@ impl<B: Backend> RendererState<B> {
                                     backend.surface.get_window_t().get_hidpi_factor(),
                                 ));
                                 recreate_swapchain = true;
-                            }
-                            winit::WindowEvent::KeyboardInput {
-                                input:
-                                    winit::KeyboardInput {
-                                        virtual_keycode,
-                                        state: winit::ElementState::Pressed,
-                                        ..
-                                    },
-                                ..
-                            } => {
-                                if let Some(kc) = virtual_keycode {
-                                    match kc {
-                                        winit::VirtualKeyCode::Key0 => {
-                                            cur_value = cur_value * 10 + 0
-                                        }
-                                        winit::VirtualKeyCode::Key1 => {
-                                            cur_value = cur_value * 10 + 1
-                                        }
-                                        winit::VirtualKeyCode::Key2 => {
-                                            cur_value = cur_value * 10 + 2
-                                        }
-                                        winit::VirtualKeyCode::Key3 => {
-                                            cur_value = cur_value * 10 + 3
-                                        }
-                                        winit::VirtualKeyCode::Key4 => {
-                                            cur_value = cur_value * 10 + 4
-                                        }
-                                        winit::VirtualKeyCode::Key5 => {
-                                            cur_value = cur_value * 10 + 5
-                                        }
-                                        winit::VirtualKeyCode::Key6 => {
-                                            cur_value = cur_value * 10 + 6
-                                        }
-                                        winit::VirtualKeyCode::Key7 => {
-                                            cur_value = cur_value * 10 + 7
-                                        }
-                                        winit::VirtualKeyCode::Key8 => {
-                                            cur_value = cur_value * 10 + 8
-                                        }
-                                        winit::VirtualKeyCode::Key9 => {
-                                            cur_value = cur_value * 10 + 9
-                                        }
-                                        winit::VirtualKeyCode::R => {
-                                            cur_value = 0;
-                                            cur_color = Color::Red
-                                        }
-                                        winit::VirtualKeyCode::G => {
-                                            cur_value = 0;
-                                            cur_color = Color::Green
-                                        }
-                                        winit::VirtualKeyCode::B => {
-                                            cur_value = 0;
-                                            cur_color = Color::Blue
-                                        }
-                                        winit::VirtualKeyCode::A => {
-                                            cur_value = 0;
-                                            cur_color = Color::Alpha
-                                        }
-                                        winit::VirtualKeyCode::Return => {
-                                            match cur_color {
-                                                Color::Red => r = cur_value as f32 / 255.0,
-                                                Color::Green => g = cur_value as f32 / 255.0,
-                                                Color::Blue => b = cur_value as f32 / 255.0,
-                                                Color::Alpha => a = cur_value as f32 / 255.0,
-                                            }
-                                            uniform
-                                                .buffer
-                                                .as_mut()
-                                                .unwrap()
-                                                .update_data(0, &[r, g, b, a]);
-                                            cur_value = 0;
-
-                                            println!("Colour updated!");
-                                        }
-                                        winit::VirtualKeyCode::C => {
-                                            match cur_color {
-                                                Color::Red => cr = cur_value as f32 / 255.0,
-                                                Color::Green => cg = cur_value as f32 / 255.0,
-                                                Color::Blue => cb = cur_value as f32 / 255.0,
-                                                Color::Alpha => {
-                                                    error!(
-                                                        "Alpha is not valid for the background."
-                                                    );
-                                                    return;
-                                                }
-                                            }
-                                            cur_value = 0;
-
-                                            println!("Background color updated!");
-                                        }
-                                        _ => return,
-                                    }
-                                    println!(
-                                        "Set {:?} color to: {} (press enter/C to confirm)",
-                                        cur_color, cur_value
-                                    )
-                                }
                             }
                             _ => (),
                         }
@@ -551,10 +350,7 @@ impl<B: Backend> RendererState<B> {
                 cmd_buffer.bind_graphics_descriptor_sets(
                     self.pipeline.pipeline_layout.as_ref().unwrap(),
                     0,
-                    vec![
-                        self.image.desc.set.as_ref().unwrap(),
-                        self.uniform.desc.as_ref().unwrap().set.as_ref().unwrap(),
-                    ],
+                    vec![self.uniform.desc.as_ref().unwrap().set.as_ref().unwrap()],
                     &[],
                 ); //TODO
 
@@ -602,10 +398,6 @@ impl<B: Backend> RendererState<B> {
 impl<B: Backend> Drop for RendererState<B> {
     fn drop(&mut self) {
         self.device.borrow().device.wait_idle().unwrap();
-        self.device
-            .borrow()
-            .device
-            .destroy_descriptor_pool(self.img_desc_pool.take().unwrap());
         self.device
             .borrow()
             .device
@@ -694,7 +486,6 @@ fn create_backend(window_state: &mut WindowState) -> (BackendState<back::Backend
 struct AdapterState<B: Backend> {
     adapter: Option<Adapter<B>>,
     memory_types: Vec<MemoryType>,
-    limits: Limits,
 }
 
 impl<B: Backend> AdapterState<B> {
@@ -716,7 +507,6 @@ impl<B: Backend> AdapterState<B> {
         AdapterState {
             adapter: Some(adapter),
             memory_types,
-            limits,
         }
     }
 }
@@ -801,7 +591,7 @@ struct BufferState<B: Backend> {
     memory: Option<B::Memory>,
     buffer: Option<B::Buffer>,
     device: Rc<RefCell<DeviceState<B>>>,
-    size: u64,
+    _size: u64,
 }
 
 impl<B: Backend> BufferState<B> {
@@ -864,11 +654,11 @@ impl<B: Backend> BufferState<B> {
             memory: Some(memory),
             buffer: Some(buffer),
             device: device_ptr,
-            size,
+            _size: size,
         }
     }
 
-    fn update_data<T>(&mut self, offset: u64, data_source: &[T])
+    fn _update_data<T>(&mut self, offset: u64, data_source: &[T])
     where
         T: Copy,
     {
@@ -877,83 +667,13 @@ impl<B: Backend> BufferState<B> {
         let stride = size_of::<T>() as u64;
         let upload_size = data_source.len() as u64 * stride;
 
-        assert!(offset + upload_size <= self.size);
+        assert!(offset + upload_size <= self._size);
 
         let mut data_target = device
-            .acquire_mapping_writer::<T>(self.memory.as_ref().unwrap(), offset..self.size)
+            .acquire_mapping_writer::<T>(self.memory.as_ref().unwrap(), offset..self._size)
             .unwrap();
         data_target[0..data_source.len()].copy_from_slice(data_source);
         device.release_mapping_writer(data_target).unwrap();
-    }
-
-    fn new_texture(
-        device_ptr: Rc<RefCell<DeviceState<B>>>,
-        device: &mut B::Device,
-        img: &::image::ImageBuffer<::image::Rgba<u8>, Vec<u8>>,
-        adapter: &AdapterState<B>,
-        usage: buffer::Usage,
-    ) -> (Self, Dimensions<u32>, u32, usize) {
-        let (width, height) = img.dimensions();
-
-        let row_alignment_mask = adapter.limits.min_buffer_copy_pitch_alignment as u32 - 1;
-        let stride = 4usize;
-
-        let row_pitch = (width * stride as u32 + row_alignment_mask) & !row_alignment_mask;
-        let upload_size = (height * row_pitch) as u64;
-
-        let memory: B::Memory;
-        let buffer: B::Buffer;
-        let size: u64;
-
-        {
-            let unbound = device.create_buffer(upload_size, usage).unwrap();
-            let mem_reqs = device.get_buffer_requirements(&unbound);
-
-            let upload_type = adapter
-                .memory_types
-                .iter()
-                .enumerate()
-                .position(|(id, mem_type)| {
-                    mem_reqs.type_mask & (1 << id) != 0
-                        && mem_type.properties.contains(m::Properties::CPU_VISIBLE)
-                })
-                .unwrap()
-                .into();
-
-            memory = device.allocate_memory(upload_type, mem_reqs.size).unwrap();
-            buffer = device.bind_buffer_memory(&memory, 0, unbound).unwrap();
-            size = mem_reqs.size;
-
-            // copy image data into staging buffer
-            {
-                let mut data_target = device
-                    .acquire_mapping_writer::<u8>(&memory, 0..size)
-                    .unwrap();
-
-                for y in 0..height as usize {
-                    let data_source_slice = &(**img)
-                        [y * (width as usize) * stride..(y + 1) * (width as usize) * stride];
-                    let dest_base = y * row_pitch as usize;
-
-                    data_target[dest_base..dest_base + data_source_slice.len()]
-                        .copy_from_slice(data_source_slice);
-                }
-
-                device.release_mapping_writer(data_target).unwrap();
-            }
-        }
-
-        (
-            BufferState {
-                memory: Some(memory),
-                buffer: Some(buffer),
-                device: device_ptr,
-                size,
-            },
-            Dimensions { width, height },
-            row_pitch,
-            stride,
-        )
     }
 }
 
@@ -966,7 +686,7 @@ impl<B: Backend> Drop for BufferState<B> {
 }
 
 struct Uniform<B: Backend> {
-    buffer: Option<BufferState<B>>,
+    _buffer: Option<BufferState<B>>,
     desc: Option<DescSet<B>>,
 }
 
@@ -1002,7 +722,7 @@ impl<B: Backend> Uniform<B> {
         );
 
         Uniform {
-            buffer,
+            _buffer: buffer,
             desc: Some(desc),
         }
     }
@@ -1087,196 +807,6 @@ impl<B: Backend> DescSet<B> {
 
     fn get_layout(&self) -> &B::DescriptorSetLayout {
         self.layout.layout.as_ref().unwrap()
-    }
-}
-
-struct ImageState<B: Backend> {
-    desc: DescSet<B>,
-    buffer: Option<BufferState<B>>,
-    sampler: Option<B::Sampler>,
-    image_view: Option<B::ImageView>,
-    image: Option<B::Image>,
-    memory: Option<B::Memory>,
-    transfered_image_fence: Option<B::Fence>,
-}
-
-impl<B: Backend> ImageState<B> {
-    fn new<T: ::hal::Supports<::hal::Transfer>>(
-        mut desc: DescSet<B>,
-        img: &::image::ImageBuffer<::image::Rgba<u8>, Vec<u8>>,
-        adapter: &AdapterState<B>,
-        usage: buffer::Usage,
-        device_state: &mut DeviceState<B>,
-        staging_pool: &mut ::hal::CommandPool<B, ::hal::Graphics>,
-    ) -> Self {
-        let (buffer, dims, row_pitch, stride) = BufferState::new_texture(
-            Rc::clone(&desc.layout.device),
-            &mut device_state.device,
-            img,
-            adapter,
-            usage,
-        );
-
-        let buffer = Some(buffer);
-        let device = &mut device_state.device;
-
-        let kind = i::Kind::D2(dims.width as i::Size, dims.height as i::Size, 1, 1);
-        let unbound = device
-            .create_image(
-                kind,
-                1,
-                ColorFormat::SELF,
-                i::Tiling::Optimal,
-                i::Usage::TRANSFER_DST | i::Usage::SAMPLED,
-                i::ViewCapabilities::empty(),
-            )
-            .unwrap(); // TODO: usage
-        let req = device.get_image_requirements(&unbound);
-
-        let device_type = adapter
-            .memory_types
-            .iter()
-            .enumerate()
-            .position(|(id, memory_type)| {
-                req.type_mask & (1 << id) != 0
-                    && memory_type.properties.contains(m::Properties::DEVICE_LOCAL)
-            })
-            .unwrap()
-            .into();
-
-        let memory = device.allocate_memory(device_type, req.size).unwrap();
-
-        let image = device.bind_image_memory(&memory, 0, unbound).unwrap();
-        let image_view = device
-            .create_image_view(
-                &image,
-                i::ViewKind::D2,
-                ColorFormat::SELF,
-                Swizzle::NO,
-                COLOR_RANGE.clone(),
-            )
-            .unwrap();
-
-        let sampler = device
-            .create_sampler(i::SamplerInfo::new(i::Filter::Linear, i::WrapMode::Clamp))
-            .expect("Can't create sampler");
-
-        desc.write_to_state(
-            vec![
-                DescSetWrite {
-                    binding: 0,
-                    array_offset: 0,
-                    descriptors: Some(pso::Descriptor::Image(&image_view, i::Layout::Undefined)),
-                },
-                DescSetWrite {
-                    binding: 1,
-                    array_offset: 0,
-                    descriptors: Some(pso::Descriptor::Sampler(&sampler)),
-                },
-            ],
-            device,
-        );
-
-        let mut transfered_image_fence = device.create_fence(false).expect("Can't create fence");
-
-        // copy buffer to texture
-        {
-            let submit = {
-                let mut cmd_buffer = staging_pool.acquire_command_buffer(false);
-
-                let image_barrier = m::Barrier::Image {
-                    states: (i::Access::empty(), i::Layout::Undefined)
-                        ..(i::Access::TRANSFER_WRITE, i::Layout::TransferDstOptimal),
-                    target: &image,
-                    range: COLOR_RANGE.clone(),
-                };
-
-                cmd_buffer.pipeline_barrier(
-                    PipelineStage::TOP_OF_PIPE..PipelineStage::TRANSFER,
-                    m::Dependencies::empty(),
-                    &[image_barrier],
-                );
-
-                cmd_buffer.copy_buffer_to_image(
-                    buffer.as_ref().unwrap().get_buffer(),
-                    &image,
-                    i::Layout::TransferDstOptimal,
-                    &[command::BufferImageCopy {
-                        buffer_offset: 0,
-                        buffer_width: row_pitch / (stride as u32),
-                        buffer_height: dims.height as u32,
-                        image_layers: i::SubresourceLayers {
-                            aspects: f::Aspects::COLOR,
-                            level: 0,
-                            layers: 0..1,
-                        },
-                        image_offset: i::Offset { x: 0, y: 0, z: 0 },
-                        image_extent: i::Extent {
-                            width: dims.width,
-                            height: dims.height,
-                            depth: 1,
-                        },
-                    }],
-                );
-
-                let image_barrier = m::Barrier::Image {
-                    states: (i::Access::TRANSFER_WRITE, i::Layout::TransferDstOptimal)
-                        ..(i::Access::SHADER_READ, i::Layout::ShaderReadOnlyOptimal),
-                    target: &image,
-                    range: COLOR_RANGE.clone(),
-                };
-                cmd_buffer.pipeline_barrier(
-                    PipelineStage::TRANSFER..PipelineStage::FRAGMENT_SHADER,
-                    m::Dependencies::empty(),
-                    &[image_barrier],
-                );
-
-                cmd_buffer.finish()
-            };
-
-            let submission = Submission::new().submit(Some(submit));
-            device_state.queues.queues[0].submit(submission, Some(&mut transfered_image_fence));
-        }
-
-        ImageState {
-            desc: desc,
-            buffer: buffer,
-            sampler: Some(sampler),
-            image_view: Some(image_view),
-            image: Some(image),
-            memory: Some(memory),
-            transfered_image_fence: Some(transfered_image_fence),
-        }
-    }
-
-    fn wait_for_transfer_completion(&self) {
-        let device = &self.desc.layout.device.borrow().device;
-        device
-            .wait_for_fence(self.transfered_image_fence.as_ref().unwrap(), !0)
-            .unwrap();
-    }
-
-    fn get_layout(&self) -> &B::DescriptorSetLayout {
-        self.desc.get_layout()
-    }
-}
-
-impl<B: Backend> Drop for ImageState<B> {
-    fn drop(&mut self) {
-        {
-            let device = &self.desc.layout.device.borrow().device;
-
-            let fence = self.transfered_image_fence.take().unwrap();
-            device.wait_for_fence(&fence, !0).unwrap();
-            device.destroy_fence(fence);
-
-            device.destroy_sampler(self.sampler.take().unwrap());
-            device.destroy_image_view(self.image_view.take().unwrap());
-            device.destroy_image(self.image.take().unwrap());
-            device.free_memory(self.memory.take().unwrap());
-        }
-
-        self.buffer.take().unwrap();
     }
 }
 
