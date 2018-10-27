@@ -1,0 +1,36 @@
+[package]
+name = "hexthing-gfxrs"
+version = "0.1.0"
+authors = ["W. Brian Gourlie <bgourlie@gmail.com>"]
+
+[features]
+default = []
+metal = ["gfx_device_metal"]
+gl = ["gfx_device_gl"]
+dx12 = ["gfx_device_dx12"]
+vulkan = ["gfx_device_vulkan"]
+
+[dependencies]
+env_logger = "^0.5"
+log = "^0.4"
+winit = "^0.17"
+glsl-to-spirv = "^0.1.4"
+gfx = "^0.17.1"
+
+[dependencies.gfx_device_gl]
+version = "^0.1"
+features = ["glutin"]
+optional = true
+
+[dependencies.gfx_device_vulkan]
+version = "^0.1"
+#features = ["glsl-to-spirv"]
+optional = true
+
+[target.'cfg(any(target_os = "macos", all(target_os = "ios", target_arch = "aarch64")))'.dependencies.gfx_device_metal]
+version = "^0.1"
+optional = true
+
+[target.'cfg(windows)'.dependencies.gfx_device_dx12]
+version = "^0.1"
+optional = true
