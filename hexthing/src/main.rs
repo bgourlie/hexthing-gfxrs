@@ -343,7 +343,7 @@ impl<B: Backend> RendererState<B> {
                             cr, cg, cb, 1.0,
                         ]))],
                     );
-                    encoder.draw(0..6, 0..1);
+                    encoder.draw(0..18, 0..1);
                 }
 
                 cmd_buffer.finish()
