@@ -53,7 +53,7 @@ use std::io::Read;
 
 const ENTRY_NAME: &str = "main";
 const DIMS: Extent2D = Extent2D {
-    width: 1024,
+    width: 768,
     height: 768,
 };
 
@@ -838,10 +838,7 @@ impl<B: Backend> PipelineState<B> {
                     pso::EntryPoint::<B> {
                         entry: ENTRY_NAME,
                         module: &vs_module,
-                        specialization: pso::Specialization {
-                            constants: &[pso::SpecializationConstant { id: 0, range: 0..4 }],
-                            data: unsafe { std::mem::transmute::<&f32, &[u8; 4]>(&0.8f32) },
-                        },
+                        specialization: pso::Specialization::default(),
                     },
                     pso::EntryPoint::<B> {
                         entry: ENTRY_NAME,
@@ -886,14 +883,6 @@ impl<B: Backend> PipelineState<B> {
                     element: pso::Element {
                         format: f::Format::Rg32Float,
                         offset: 0,
-                    },
-                });
-                pipeline_desc.attributes.push(pso::AttributeDesc {
-                    location: 1,
-                    binding: 0,
-                    element: pso::Element {
-                        format: f::Format::Rg32Float,
-                        offset: 8,
                     },
                 });
 
@@ -1158,13 +1147,25 @@ impl<B: Backend> Drop for FramebufferState<B> {
 fn main() {
     env_logger::init();
 
-    let quad: [Vertex; 6] = [
-        Vertex::new(-0.5, 0.33),
-        Vertex::new(0.5, 0.33),
-        Vertex::new(0.5, -0.33),
-        Vertex::new(-0.5, 0.33),
-        Vertex::new(0.5, -0.33),
-        Vertex::new(-0.5, -0.33),
+    let quad: [Vertex; 18] = [
+        Vertex::new(0.0, 0.0),
+        Vertex::new(0.8660254037844387, -0.5),
+        Vertex::new(0.8660254037844387, 0.5),
+        Vertex::new(0.0, 0.0),
+        Vertex::new(0.8660254037844387, 0.5),
+        Vertex::new(0.0, 1.0),
+        Vertex::new(0.0, 0.0),
+        Vertex::new(0.0, 1.0),
+        Vertex::new(-0.8660254037844387, 0.5),
+        Vertex::new(0.0, 0.0),
+        Vertex::new(-0.8660254037844387, 0.5),
+        Vertex::new(-0.8660254037844387, -0.5),
+        Vertex::new(0.0, 0.0),
+        Vertex::new(-0.8660254037844387, -0.5),
+        Vertex::new(0.0, -1.0),
+        Vertex::new(0.0, 0.0),
+        Vertex::new(0.0, -1.0),
+        Vertex::new(0.8660254037844387, -0.5),
     ];
 
     let mut window = WindowState::new();
