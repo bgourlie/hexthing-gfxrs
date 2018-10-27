@@ -29,8 +29,10 @@ use back::glutin::GlContext;
 
 extern crate gfx_hal as hal;
 extern crate glsl_to_spirv;
+extern crate nalgebra;
 extern crate winit;
 
+use nalgebra::Vector2;
 use std::cell::RefCell;
 use std::mem::size_of;
 use std::rc::Rc;
@@ -55,35 +57,13 @@ const DIMS: Extent2D = Extent2D {
     height: 768,
 };
 
-#[derive(Debug, Clone, Copy)]
-struct Vertex {
-    a_pos: [f32; 2],
-}
-
-const QUAD: [Vertex; 6] = [
-    Vertex {
-        a_pos: [-0.5, 0.33],
-    },
-    Vertex { a_pos: [0.5, 0.33] },
-    Vertex {
-        a_pos: [0.5, -0.33],
-    },
-    Vertex {
-        a_pos: [-0.5, 0.33],
-    },
-    Vertex {
-        a_pos: [0.5, -0.33],
-    },
-    Vertex {
-        a_pos: [-0.5, -0.33],
-    },
-];
-
 const COLOR_RANGE: i::SubresourceRange = i::SubresourceRange {
     aspects: f::Aspects::COLOR,
     levels: 0..1,
     layers: 0..1,
 };
+
+type Vertex = Vector2<f32>;
 
 trait SurfaceTrait {
     #[cfg(feature = "gl")]
@@ -112,7 +92,7 @@ struct RendererState<B: Backend> {
 }
 
 impl<B: Backend> RendererState<B> {
-    fn new(mut backend: BackendState<B>, window: WindowState) -> Self {
+    fn new(mut backend: BackendState<B>, window: WindowState, quad: &[Vertex]) -> Self {
         let device = Rc::new(RefCell::new(DeviceState::new(
             backend.adapter.adapter.take().unwrap(),
             &backend.surface,
@@ -157,7 +137,7 @@ impl<B: Backend> RendererState<B> {
 
         let vertex_buffer = BufferState::new::<Vertex>(
             Rc::clone(&device),
-            &QUAD,
+            &quad,
             buffer::Usage::VERTEX,
             &backend.adapter.memory_types,
         );
@@ -1178,10 +1158,19 @@ impl<B: Backend> Drop for FramebufferState<B> {
 fn main() {
     env_logger::init();
 
+    let quad: [Vertex; 6] = [
+        Vertex::new(-0.5, 0.33),
+        Vertex::new(0.5, 0.33),
+        Vertex::new(0.5, -0.33),
+        Vertex::new(-0.5, 0.33),
+        Vertex::new(0.5, -0.33),
+        Vertex::new(-0.5, -0.33),
+    ];
+
     let mut window = WindowState::new();
     let (backend, _instance) = create_backend(&mut window);
 
-    let mut renderer_state = RendererState::new(backend, window);
+    let mut renderer_state = RendererState::new(backend, window, &quad);
     renderer_state.mainloop();
 }
 
