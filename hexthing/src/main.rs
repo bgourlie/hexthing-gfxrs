@@ -1,6 +1,11 @@
 #![cfg_attr(
-not(any(feature = "vulkan", feature = "dx12", feature = "metal", feature = "gl")),
-allow(dead_code, unused_extern_crates, unused_imports)
+    not(any(
+        feature = "vulkan",
+        feature = "dx12",
+        feature = "metal",
+        feature = "gl"
+    )),
+    allow(dead_code, unused_extern_crates, unused_imports)
 )]
 
 extern crate env_logger;
@@ -13,6 +18,9 @@ extern crate gfx_backend_metal as back;
 #[cfg(feature = "vulkan")]
 extern crate gfx_backend_vulkan as back;
 extern crate gfx_hal as hal;
+
+extern crate nalgebra;
+extern crate specs;
 
 #[cfg(feature = "gl")]
 use back::glutin::GlContext;
@@ -62,7 +70,12 @@ const COLOR_RANGE: i::SubresourceRange = i::SubresourceRange {
     layers: 0..1,
 };
 
-#[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal", feature = "gl"))]
+#[cfg(any(
+    feature = "vulkan",
+    feature = "dx12",
+    feature = "metal",
+    feature = "gl"
+))]
 fn main() {
     env_logger::init();
 
@@ -113,11 +126,15 @@ fn main() {
         .create_command_pool_typed(&queue_group, pool::CommandPoolCreateFlags::empty(), 16)
         .expect("Can't create command pool");
 
-//    // Setup renderpass and pipeline
-    let set_layout = device.create_descriptor_set_layout(&[], &[]).expect("Can't create descriptor set layout");
+    //    // Setup renderpass and pipeline
+    let set_layout = device
+        .create_descriptor_set_layout(&[], &[])
+        .expect("Can't create descriptor set layout");
 
     // Descriptors
-    let mut desc_pool = device.create_descriptor_pool(1, &[]).expect("Can't create descriptor pool");
+    let mut desc_pool = device
+        .create_descriptor_pool(1, &[])
+        .expect("Can't create descriptor pool");
     let desc_set = desc_pool.allocate_set(&set_layout).unwrap();
 
     // Buffer allocations
@@ -240,10 +257,12 @@ fn main() {
         Backbuffer::Framebuffer(fbo) => (Vec::new(), vec![fbo]),
     };
 
-    let pipeline_layout = device.create_pipeline_layout(
-        std::iter::once(&set_layout),
-        &[(pso::ShaderStageFlags::VERTEX, 0..8)],
-    ).expect("Can't create pipeline layout");
+    let pipeline_layout = device
+        .create_pipeline_layout(
+            std::iter::once(&set_layout),
+            &[(pso::ShaderStageFlags::VERTEX, 0..8)],
+        )
+        .expect("Can't create pipeline layout");
     let pipeline = {
         let vs_module = {
             let glsl = fs::read_to_string("src/shaders/hex.vert").expect("Vertex shader not found");
@@ -255,7 +274,8 @@ fn main() {
             device.create_shader_module(&spirv).unwrap()
         };
         let fs_module = {
-            let glsl = fs::read_to_string("src/shaders/hex.frag").expect("Fragment shader not found");
+            let glsl =
+                fs::read_to_string("src/shaders/hex.frag").expect("Fragment shader not found");
             let spirv: Vec<u8> = glsl_to_spirv::compile(&glsl, glsl_to_spirv::ShaderType::Fragment)
                 .unwrap()
                 .bytes()
@@ -270,12 +290,7 @@ fn main() {
                     entry: ENTRY_NAME,
                     module: &vs_module,
                     specialization: pso::Specialization {
-                        constants: &[
-                            pso::SpecializationConstant {
-                                id: 0,
-                                range: 0 .. 4,
-                            },
-                        ],
+                        constants: &[pso::SpecializationConstant { id: 0, range: 0..4 }],
                         data: unsafe { std::mem::transmute::<&f32, &[u8; 4]>(&0.8f32) },
                     },
                 },
@@ -360,20 +375,20 @@ fn main() {
         events_loop.poll_events(|event| {
             if let winit::Event::WindowEvent { event, .. } = event {
                 #[allow(unused_variables)]
-                    match event {
+                match event {
                     winit::WindowEvent::KeyboardInput {
                         input:
-                        winit::KeyboardInput {
-                            virtual_keycode: Some(winit::VirtualKeyCode::Escape),
-                            ..
-                        },
+                            winit::KeyboardInput {
+                                virtual_keycode: Some(winit::VirtualKeyCode::Escape),
+                                ..
+                            },
                         ..
                     }
                     | winit::WindowEvent::CloseRequested => running = false,
                     winit::WindowEvent::Resized(dims) => {
                         println!("resized to {:?}", dims);
                         #[cfg(feature = "gl")]
-                            surface
+                        surface
                             .get_window()
                             .resize(dims.to_physical(surface.get_window().get_hidpi_factor()));
                         recreate_swapchain = true;
@@ -507,18 +522,13 @@ fn main() {
     device.destroy_descriptor_set_layout(set_layout);
 
     device.destroy_buffer(vertex_buffer);
-//    device.destroy_buffer(image_upload_buffer);
-//    device.destroy_image(image_logo);
-//    device.destroy_image_view(image_srv);
-//    device.destroy_sampler(sampler);
     device.destroy_fence(frame_fence);
     device.destroy_semaphore(frame_semaphore);
     device.destroy_render_pass(render_pass);
     device.free_memory(buffer_memory);
-//    device.free_memory(image_memory);
-//    device.free_memory(image_upload_memory);
     device.destroy_graphics_pipeline(pipeline);
     device.destroy_pipeline_layout(pipeline_layout);
+
     for framebuffer in framebuffers {
         device.destroy_framebuffer(framebuffer);
     }
@@ -529,7 +539,12 @@ fn main() {
     device.destroy_swapchain(swap_chain);
 }
 
-#[cfg(not(any(feature = "vulkan", feature = "dx12", feature = "metal", feature = "gl")))]
+#[cfg(not(any(
+    feature = "vulkan",
+    feature = "dx12",
+    feature = "metal",
+    feature = "gl"
+)))]
 fn main() {
     println!("You need to enable the native API feature (vulkan/metal) in order to test the LL");
 }

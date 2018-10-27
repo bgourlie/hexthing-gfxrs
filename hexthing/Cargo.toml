@@ -18,6 +18,8 @@ glsl-to-spirv = "^0.1.4"
 gfx = "^0.17.1"
 gfx-hal = { path = "../gfx/src/hal", version = "0.1" }
 gfx-backend-empty = { path = "../gfx/src/backend/empty", version = "0.1" }
+nalgebra = "^0.16.5"
+specs = "^0.12.3"
 
 [dependencies.gfx-backend-gl]
 path = "../gfx/src/backend/gl"
