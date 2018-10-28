@@ -113,16 +113,6 @@ impl<B: Backend> RendererState<B> {
 
         println!("Memory types: {:?}", backend.adapter.memory_types);
 
-        let staging_pool = device
-            .borrow()
-            .device
-            .create_command_pool_typed(
-                &device.borrow().queues,
-                pool::CommandPoolCreateFlags::empty(),
-                16,
-            )
-            .expect("Can't create staging command pool");
-
         let vertex_buffer = BufferState::new::<Vertex>(
             Rc::clone(&device),
             &quad,
@@ -137,11 +127,6 @@ impl<B: Backend> RendererState<B> {
             uniform_desc,
             0,
         );
-
-        device
-            .borrow()
-            .device
-            .destroy_command_pool(staging_pool.into_raw());
 
         let mut swapchain = Some(SwapchainState::new(&mut backend, Rc::clone(&device)));
 
