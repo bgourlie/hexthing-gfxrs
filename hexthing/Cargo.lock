@@ -498,6 +498,7 @@ name = "hexthing-gfxrs"
 version = "0.1.0"
 dependencies = [
  "env_logger 0.5.13 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "gfx 0.17.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "gfx-backend-dx12 0.1.0",
  "gfx-backend-empty 0.1.0",

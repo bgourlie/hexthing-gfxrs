@@ -12,6 +12,7 @@ extern crate gfx_backend_metal as back;
 #[cfg(feature = "vulkan")]
 extern crate gfx_backend_vulkan as back;
 
+extern crate fnv;
 extern crate gfx;
 extern crate gfx_hal as hal;
 extern crate glsl_to_spirv;
@@ -38,6 +39,7 @@ use hal::queue::Submission;
 use definitions::InputDescriptor;
 use definitions::RenderableDefinition;
 use definitions::Vertex;
+use fnv::FnvHashMap;
 use std::fs;
 use std::io::Read;
 
@@ -74,7 +76,7 @@ struct RendererState<B: Backend> {
     vertex_buffer: BufferState<B>,
     render_pass: RenderPassState<B>,
     uniform: Uniform<B>,
-    pipeline: PipelineState<B>,
+    pipelines: FnvHashMap<String, PipelineState<B>>,
     framebuffer: FramebufferState<B>,
     viewport: pso::Viewport,
 }
@@ -145,6 +147,8 @@ impl<B: Backend> RendererState<B> {
         );
 
         let viewport = RendererState::create_viewport(swapchain.as_ref().unwrap());
+        let mut pipelines = FnvHashMap::default();
+        pipelines.insert("main".to_owned(), pipeline);
 
         RendererState {
             window,
@@ -154,7 +158,7 @@ impl<B: Backend> RendererState<B> {
             vertex_buffer,
             uniform,
             render_pass,
-            pipeline,
+            pipelines,
             swapchain,
             framebuffer,
             viewport,
@@ -180,11 +184,14 @@ impl<B: Backend> RendererState<B> {
             self.swapchain.as_mut().unwrap(),
         );
 
-        self.pipeline = PipelineState::new(
+        let pipeline = PipelineState::new(
             vec![self.uniform.get_layout()],
             self.render_pass.render_pass.as_ref().unwrap(),
             Rc::clone(&self.device),
         );
+
+        self.pipelines.clear();
+        self.pipelines.insert("main".to_owned(), pipeline);
 
         self.viewport = RendererState::create_viewport(self.swapchain.as_ref().unwrap());
     }
@@ -288,13 +295,13 @@ impl<B: Backend> RendererState<B> {
             // Rendering
             let submit = {
                 let mut cmd_buffer = command_pool.acquire_command_buffer(false);
-
+                let pipeline = self.pipelines.get("main").unwrap();
                 cmd_buffer.set_viewports(0, &[self.viewport.clone()]);
                 cmd_buffer.set_scissors(0, &[self.viewport.rect]);
-                cmd_buffer.bind_graphics_pipeline(self.pipeline.pipeline.as_ref().unwrap());
+                cmd_buffer.bind_graphics_pipeline(pipeline.pipeline.as_ref().unwrap());
                 cmd_buffer.bind_vertex_buffers(0, Some((self.vertex_buffer.get_buffer(), 0)));
                 cmd_buffer.bind_graphics_descriptor_sets(
-                    self.pipeline.pipeline_layout.as_ref().unwrap(),
+                    pipeline.pipeline_layout.as_ref().unwrap(),
                     0,
                     vec![self.uniform.desc.as_ref().unwrap().set.as_ref().unwrap()],
                     &[],
