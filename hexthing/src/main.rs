@@ -1,36 +1,25 @@
 #![cfg_attr(
-    not(any(
-        feature = "vulkan",
-        feature = "dx12",
-        feature = "metal",
-        feature = "gl"
-    )),
+    not(any(feature = "vulkan", feature = "dx12", feature = "metal",)),
     allow(dead_code, unused_extern_crates, unused_imports)
 )]
 
 #[cfg(feature = "dx12")]
 extern crate gfx_backend_dx12 as back;
-#[cfg(not(any(
-    feature = "vulkan",
-    feature = "dx12",
-    feature = "metal",
-    feature = "gl"
-)))]
+#[cfg(not(any(feature = "vulkan", feature = "dx12", feature = "metal",)))]
 extern crate gfx_backend_empty as back;
 #[cfg(feature = "metal")]
 extern crate gfx_backend_metal as back;
 #[cfg(feature = "vulkan")]
 extern crate gfx_backend_vulkan as back;
 
-#[cfg(feature = "gl")]
-use back::glutin::GlContext;
-
+extern crate gfx;
 extern crate gfx_hal as hal;
 extern crate glsl_to_spirv;
 extern crate nalgebra;
 extern crate winit;
 
-use nalgebra::Vector2;
+mod definitions;
+
 use std::cell::RefCell;
 use std::mem::size_of;
 use std::rc::Rc;
@@ -46,6 +35,9 @@ use hal::pass::Subpass;
 use hal::pso::{PipelineStage, ShaderStageFlags};
 use hal::queue::Submission;
 
+use definitions::InputDescriptor;
+use definitions::RenderableDefinition;
+use definitions::Vertex;
 use std::fs;
 use std::io::Read;
 
@@ -60,8 +52,6 @@ const COLOR_RANGE: i::SubresourceRange = i::SubresourceRange {
     levels: 0..1,
     layers: 0..1,
 };
-
-type Vertex = Vector2<f32>;
 
 trait SurfaceTrait {
     #[cfg(feature = "gl")]
@@ -239,7 +229,6 @@ impl<B: Backend> RendererState<B> {
 
         while running {
             {
-
                 self.window.events_loop.poll_events(|event| {
                     if let winit::Event::WindowEvent { event, .. } = event {
                         #[allow(unused_variables)]
@@ -1138,6 +1127,40 @@ impl<B: Backend> Drop for FramebufferState<B> {
 ))]
 fn main() {
     env_logger::init();
+
+    let hex_definition = RenderableDefinition {
+        id: "hex".to_owned(),
+        fragment_shader: fs::read_to_string("src/shaders/hex.frag").unwrap(),
+        vertex_shader: fs::read_to_string("src/shaders/hex.vert").unwrap(),
+        inputs: vec![],
+        draw_mode: Primitive::TriangleList,
+        vertices_to_render: 18,
+    };
+
+    let hex_inputs = vec![InputDescriptor {
+        location: 0,
+        buffer_type: buffer::Usage::VERTEX,
+        vertices: vec![
+            Vertex::new(0.0, 0.0),
+            Vertex::new(0.8660254037844387, -0.5),
+            Vertex::new(0.8660254037844387, 0.5),
+            Vertex::new(0.0, 0.0),
+            Vertex::new(0.8660254037844387, 0.5),
+            Vertex::new(0.0, 1.0),
+            Vertex::new(0.0, 0.0),
+            Vertex::new(0.0, 1.0),
+            Vertex::new(-0.8660254037844387, 0.5),
+            Vertex::new(0.0, 0.0),
+            Vertex::new(-0.8660254037844387, 0.5),
+            Vertex::new(-0.8660254037844387, -0.5),
+            Vertex::new(0.0, 0.0),
+            Vertex::new(-0.8660254037844387, -0.5),
+            Vertex::new(0.0, -1.0),
+            Vertex::new(0.0, 0.0),
+            Vertex::new(0.0, -1.0),
+            Vertex::new(0.8660254037844387, -0.5),
+        ],
+    }];
 
     let quad: [Vertex; 18] = [
         Vertex::new(0.0, 0.0),
