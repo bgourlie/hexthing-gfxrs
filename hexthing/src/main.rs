@@ -55,18 +55,6 @@ const COLOR_RANGE: i::SubresourceRange = i::SubresourceRange {
     layers: 0..1,
 };
 
-trait SurfaceTrait {
-    #[cfg(feature = "gl")]
-    fn get_window_t(&self) -> &back::glutin::GlWindow;
-}
-
-impl SurfaceTrait for <back::Backend as hal::Backend>::Surface {
-    #[cfg(feature = "gl")]
-    fn get_window_t(&self) -> &back::glutin::GlWindow {
-        self.get_window()
-    }
-}
-
 struct RendererState<B: Backend> {
     uniform_desc_pool: Option<B::DescriptorPool>,
     swapchain: Option<SwapchainState<B>>,
@@ -208,10 +196,7 @@ impl<B: Backend> RendererState<B> {
         }
     }
 
-    fn mainloop(&mut self)
-    where
-        B::Surface: SurfaceTrait,
-    {
+    fn mainloop(&mut self) {
         let mut running = true;
         let mut recreate_swapchain = false;
 
