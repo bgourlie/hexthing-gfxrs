@@ -73,7 +73,6 @@ struct RendererState<B: Backend> {
     device: Rc<RefCell<DeviceState<B>>>,
     backend: BackendState<B>,
     window: WindowState,
-    vertex_buffer: BufferState<B>,
     render_pass: RenderPassState<B>,
     uniform: Uniform<B>,
     pipelines: FnvHashMap<String, PipelineState<B>>,
@@ -115,13 +114,6 @@ impl<B: Backend> RendererState<B> {
 
         println!("Memory types: {:?}", backend.adapter.memory_types);
 
-        let vertex_buffer = BufferState::new::<Vertex>(
-            Rc::clone(&device),
-            &quad,
-            buffer::Usage::VERTEX,
-            &backend.adapter.memory_types,
-        );
-
         let uniform = Uniform::new(
             Rc::clone(&device),
             &backend.adapter.memory_types,
@@ -144,6 +136,7 @@ impl<B: Backend> RendererState<B> {
             vec![uniform.get_layout()],
             render_pass.render_pass.as_ref().unwrap(),
             Rc::clone(&device),
+            &backend
         );
 
         let viewport = RendererState::create_viewport(swapchain.as_ref().unwrap());
@@ -155,7 +148,6 @@ impl<B: Backend> RendererState<B> {
             backend,
             device,
             uniform_desc_pool,
-            vertex_buffer,
             uniform,
             render_pass,
             pipelines,
@@ -188,6 +180,7 @@ impl<B: Backend> RendererState<B> {
             vec![self.uniform.get_layout()],
             self.render_pass.render_pass.as_ref().unwrap(),
             Rc::clone(&self.device),
+            &self.backend
         );
 
         self.pipelines.clear();
@@ -292,6 +285,7 @@ impl<B: Backend> RendererState<B> {
                 .unwrap();
             command_pool.reset();
 
+            let pipeline = self.pipelines.get("main").unwrap();
             // Rendering
             let submit = {
                 let mut cmd_buffer = command_pool.acquire_command_buffer(false);
@@ -299,7 +293,7 @@ impl<B: Backend> RendererState<B> {
                 cmd_buffer.set_viewports(0, &[self.viewport.clone()]);
                 cmd_buffer.set_scissors(0, &[self.viewport.rect]);
                 cmd_buffer.bind_graphics_pipeline(pipeline.pipeline.as_ref().unwrap());
-                cmd_buffer.bind_vertex_buffers(0, Some((self.vertex_buffer.get_buffer(), 0)));
+                cmd_buffer.bind_vertex_buffers(0, Some((pipeline.vertex_buffer.get_buffer(), 0)));
                 cmd_buffer.bind_graphics_descriptor_sets(
                     pipeline.pipeline_layout.as_ref().unwrap(),
                     0,
@@ -767,6 +761,7 @@ struct PipelineState<B: Backend> {
     pipeline: Option<B::GraphicsPipeline>,
     pipeline_layout: Option<B::PipelineLayout>,
     device: Rc<RefCell<DeviceState<B>>>,
+    vertex_buffer: BufferState<B>
 }
 
 impl<B: Backend> PipelineState<B> {
@@ -774,12 +769,21 @@ impl<B: Backend> PipelineState<B> {
         desc_layouts: IS,
         render_pass: &B::RenderPass,
         device_ptr: Rc<RefCell<DeviceState<B>>>,
+        backend: &BackendState<B>
     ) -> Self
     where
         IS: IntoIterator,
         IS::Item: std::borrow::Borrow<B::DescriptorSetLayout>,
     {
         let device = &device_ptr.borrow().device;
+
+        let vertex_buffer = BufferState::new::<Vertex>(
+            Rc::clone(&device),
+            &quad,
+            buffer::Usage::VERTEX,
+            &backend.adapter.memory_types,
+        );
+
         let pipeline_layout = device
             .create_pipeline_layout(desc_layouts, &[(pso::ShaderStageFlags::VERTEX, 0..8)])
             .expect("Can't create pipeline layout");
@@ -872,6 +876,7 @@ impl<B: Backend> PipelineState<B> {
             pipeline: Some(pipeline),
             pipeline_layout: Some(pipeline_layout),
             device: Rc::clone(&device_ptr),
+            vertex_buffer
         }
     }
 }
