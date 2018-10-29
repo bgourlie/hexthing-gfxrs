@@ -43,6 +43,8 @@ use fnv::FnvHashMap;
 use std::fs;
 use std::io::Read;
 
+type BackendImpl = back::Backend;
+
 const ENTRY_NAME: &str = "main";
 const DIMS: Extent2D = Extent2D {
     width: 768,
@@ -55,22 +57,21 @@ const COLOR_RANGE: i::SubresourceRange = i::SubresourceRange {
     layers: 0..1,
 };
 
-struct RendererState<B: Backend> {
-    uniform_desc_pool: Option<B::DescriptorPool>,
-    swapchain: Option<SwapchainState<B>>,
-    device: Rc<RefCell<DeviceState<B>>>,
-    backend: BackendState<B>,
-    window: WindowState,
-    vertex_buffer: BufferState<B>,
-    render_pass: RenderPassState<B>,
-    uniform: Uniform<B>,
-    pipelines: FnvHashMap<String, PipelineState<B>>,
-    framebuffer: FramebufferState<B>,
+struct RendererState {
+    uniform_desc_pool: Option<<BackendImpl as Backend>::DescriptorPool>,
+    swapchain: Option<SwapchainState>,
+    device: Rc<RefCell<DeviceState>>,
+    backend: BackendState,
+    vertex_buffer: BufferState,
+    render_pass: RenderPassState,
+    uniform: Uniform,
+    pipelines: FnvHashMap<String, PipelineState>,
+    framebuffer: FramebufferState,
     viewport: pso::Viewport,
 }
 
-impl<B: Backend> RendererState<B> {
-    fn new(mut backend: BackendState<B>, window: WindowState, quad: &[Vertex]) -> Self {
+impl RendererState {
+    fn new(mut backend: BackendState, quad: &[Vertex]) -> Self {
         let device = Rc::new(RefCell::new(DeviceState::new(
             backend.adapter.adapter.take().unwrap(),
             &backend.surface,
@@ -139,7 +140,6 @@ impl<B: Backend> RendererState<B> {
         pipelines.insert("main".to_owned(), pipeline);
 
         RendererState {
-            window,
             backend,
             device,
             uniform_desc_pool,
@@ -184,7 +184,7 @@ impl<B: Backend> RendererState<B> {
         self.viewport = RendererState::create_viewport(self.swapchain.as_ref().unwrap());
     }
 
-    fn create_viewport(swapchain: &SwapchainState<B>) -> pso::Viewport {
+    fn create_viewport(swapchain: &SwapchainState) -> pso::Viewport {
         pso::Viewport {
             rect: pso::Rect {
                 x: 0,
@@ -206,7 +206,7 @@ impl<B: Backend> RendererState<B> {
 
         while running {
             {
-                self.window.events_loop.poll_events(|event| {
+                self.backend.events_loop.poll_events(|event| {
                     if let winit::Event::WindowEvent { event, .. } = event {
                         #[allow(unused_variables)]
                         match event {
@@ -333,111 +333,23 @@ impl<B: Backend> RendererState<B> {
     }
 }
 
-impl<B: Backend> Drop for RendererState<B> {
-    fn drop(&mut self) {
-        self.device.borrow().device.wait_idle().unwrap();
-        self.device
-            .borrow()
-            .device
-            .destroy_descriptor_pool(self.uniform_desc_pool.take().unwrap());
-        self.swapchain.take();
-    }
-}
-
-struct WindowState {
-    events_loop: winit::EventsLoop,
-    wb: Option<winit::WindowBuilder>,
-}
-
-impl WindowState {
-    fn new() -> WindowState {
-        let events_loop = winit::EventsLoop::new();
-
-        let wb = winit::WindowBuilder::new()
-            .with_dimensions(winit::dpi::LogicalSize::new(
-                DIMS.width as _,
-                DIMS.height as _,
-            ))
-            .with_title("quad".to_string());
-
-        WindowState {
-            events_loop,
-            wb: Some(wb),
-        }
-    }
-}
-
-struct BackendState<B: Backend> {
-    surface: B::Surface,
-    adapter: AdapterState<B>,
-    #[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal"))]
-    #[allow(dead_code)]
-    window: winit::Window,
-}
-
-#[cfg(any(feature = "vulkan", feature = "dx12", feature = "metal"))]
-fn create_backend(window_state: &mut WindowState) -> (BackendState<back::Backend>, back::Instance) {
-    let window = window_state
-        .wb
-        .take()
-        .unwrap()
-        .build(&window_state.events_loop)
-        .unwrap();
-    let instance = back::Instance::create("gfx-rs quad", 1);
-    let surface = instance.create_surface(&window);
-    let mut adapters = instance.enumerate_adapters();
-    (
-        BackendState {
-            adapter: AdapterState::new(&mut adapters),
-            surface,
-            window,
-        },
-        instance,
-    )
-}
-
-#[cfg(feature = "gl")]
-fn create_backend(window_state: &mut WindowState) -> (BackendState<back::Backend>, ()) {
-    let window = {
-        let builder =
-            back::config_context(back::glutin::ContextBuilder::new(), ColorFormat::SELF, None)
-                .with_vsync(true);
-        back::glutin::GlWindow::new(
-            window_state.wb.take().unwrap(),
-            builder,
-            &window_state.events_loop,
-        )
-        .unwrap()
-    };
-
-    let surface = back::Surface::from_window(window);
-    let mut adapters = surface.enumerate_adapters();
-    (
-        BackendState {
-            adapter: AdapterState::new(&mut adapters),
-            surface,
-        },
-        (),
-    )
-}
-
-struct AdapterState<B: Backend> {
-    adapter: Option<Adapter<B>>,
+struct AdapterState {
+    adapter: Option<Adapter<BackendImpl>>,
     memory_types: Vec<MemoryType>,
 }
 
-impl<B: Backend> AdapterState<B> {
-    fn new(adapters: &mut Vec<Adapter<B>>) -> Self {
+impl AdapterState {
+    fn new(adapters: &mut Vec<Adapter>) -> Self {
         print!("Chosen: ");
 
         for adapter in adapters.iter() {
             println!("{:?}", adapter.info);
         }
 
-        AdapterState::<B>::new_adapter(adapters.remove(0))
+        AdapterState::new_adapter(adapters.remove(0))
     }
 
-    fn new_adapter(adapter: Adapter<B>) -> Self {
+    fn new_adapter(adapter: Adapter<BackendImpl>) -> Self {
         let memory_types = adapter.physical_device.memory_properties().memory_types;
         let limits = adapter.physical_device.limits();
         println!("{:?}", limits);
@@ -449,14 +361,14 @@ impl<B: Backend> AdapterState<B> {
     }
 }
 
-struct DeviceState<B: Backend> {
-    device: B::Device,
-    physical_device: B::PhysicalDevice,
-    queues: QueueGroup<B, ::hal::Graphics>,
+struct DeviceState {
+    device: <BackendImpl as Backend>::Device,
+    physical_device: <BackendImpl as Backend>::PhysicalDevice,
+    queues: QueueGroup<BackendImpl, ::hal::Graphics>,
 }
 
-impl<B: Backend> DeviceState<B> {
-    fn new(adapter: Adapter<B>, surface: &B::Surface) -> Self {
+impl DeviceState {
+    fn new(adapter: Adapter, surface: &<BackendImpl as Backend>::Surface) -> Self {
         let (device, queues) = adapter
             .open_with::<_, ::hal::Graphics>(1, |family| surface.supports_queue_family(family))
             .unwrap();
@@ -469,13 +381,13 @@ impl<B: Backend> DeviceState<B> {
     }
 }
 
-struct RenderPassState<B: Backend> {
-    render_pass: Option<B::RenderPass>,
-    device: Rc<RefCell<DeviceState<B>>>,
+struct RenderPassState {
+    render_pass: Option<<BackendImpl as Backend>::RenderPass>,
+    device: Rc<RefCell<DeviceState>>,
 }
 
-impl<B: Backend> RenderPassState<B> {
-    fn new(swapchain: &SwapchainState<B>, device: Rc<RefCell<DeviceState<B>>>) -> Self {
+impl RenderPassState {
+    fn new(swapchain: &SwapchainState, device: Rc<RefCell<DeviceState>>) -> Self {
         let render_pass = {
             let attachment = pass::Attachment {
                 format: Some(swapchain.format.clone()),
@@ -518,27 +430,27 @@ impl<B: Backend> RenderPassState<B> {
     }
 }
 
-impl<B: Backend> Drop for RenderPassState<B> {
+impl Drop for RenderPassState {
     fn drop(&mut self) {
         let device = &self.device.borrow().device;
         device.destroy_render_pass(self.render_pass.take().unwrap());
     }
 }
 
-struct BufferState<B: Backend> {
-    memory: Option<B::Memory>,
-    buffer: Option<B::Buffer>,
-    device: Rc<RefCell<DeviceState<B>>>,
+struct BufferState {
+    memory: Option<<BackendImpl as Backend>::Memory>,
+    buffer: Option<<BackendImpl as Backend>::Buffer>,
+    device: Rc<RefCell<DeviceState>>,
     _size: u64,
 }
 
-impl<B: Backend> BufferState<B> {
-    fn get_buffer(&self) -> &B::Buffer {
+impl BufferState {
+    fn get_buffer(&self) -> &<BackendImpl as Backend>::Buffer {
         self.buffer.as_ref().unwrap()
     }
 
     fn new<T>(
-        device_ptr: Rc<RefCell<DeviceState<B>>>,
+        device_ptr: Rc<RefCell<DeviceState>>,
         data_source: &[T],
         usage: buffer::Usage,
         memory_types: &[MemoryType],
@@ -546,8 +458,8 @@ impl<B: Backend> BufferState<B> {
     where
         T: Copy,
     {
-        let memory: B::Memory;
-        let buffer: B::Buffer;
+        let memory: <BackendImpl as Backend>::Memory;
+        let buffer: <BackendImpl as Backend>::Buffer;
         let size: u64;
 
         let stride = size_of::<T>() as u64;
@@ -615,7 +527,7 @@ impl<B: Backend> BufferState<B> {
     }
 }
 
-impl<B: Backend> Drop for BufferState<B> {
+impl Drop for BufferState {
     fn drop(&mut self) {
         let device = &self.device.borrow().device;
         device.destroy_buffer(self.buffer.take().unwrap());
@@ -623,17 +535,17 @@ impl<B: Backend> Drop for BufferState<B> {
     }
 }
 
-struct Uniform<B: Backend> {
-    _buffer: Option<BufferState<B>>,
-    desc: Option<DescSet<B>>,
+struct Uniform {
+    _buffer: Option<BufferState>,
+    desc: Option<DescSet>,
 }
 
-impl<B: Backend> Uniform<B> {
+impl Uniform {
     fn new<T>(
-        device: Rc<RefCell<DeviceState<B>>>,
+        device: Rc<RefCell<DeviceState>>,
         memory_types: &[MemoryType],
         data: &[T],
-        mut desc: DescSet<B>,
+        mut desc: DescSet,
         binding: u32,
     ) -> Self
     where
@@ -665,19 +577,19 @@ impl<B: Backend> Uniform<B> {
         }
     }
 
-    fn get_layout(&self) -> &B::DescriptorSetLayout {
+    fn get_layout(&self) -> &<BackendImpl as Backend>::DescriptorSetLayout {
         self.desc.as_ref().unwrap().get_layout()
     }
 }
 
-struct DescSetLayout<B: Backend> {
-    layout: Option<B::DescriptorSetLayout>,
-    device: Rc<RefCell<DeviceState<B>>>,
+struct DescSetLayout {
+    layout: Option<<BackendImpl as Backend>::DescriptorSetLayout>,
+    device: Rc<RefCell<DeviceState>>,
 }
 
-impl<B: Backend> DescSetLayout<B> {
+impl DescSetLayout {
     fn new(
-        device: Rc<RefCell<DeviceState<B>>>,
+        device: Rc<RefCell<DeviceState>>,
         bindings: Vec<pso::DescriptorSetLayoutBinding>,
     ) -> Self {
         let desc_set_layout = device
@@ -692,7 +604,7 @@ impl<B: Backend> DescSetLayout<B> {
         }
     }
 
-    fn create_desc_set(self, desc_pool: &mut B::DescriptorPool) -> DescSet<B> {
+    fn create_desc_set(self, desc_pool: &mut <BackendImpl as Backend>::DescriptorPool) -> DescSet {
         let desc_set = desc_pool
             .allocate_set(self.layout.as_ref().unwrap())
             .unwrap();
@@ -703,16 +615,16 @@ impl<B: Backend> DescSetLayout<B> {
     }
 }
 
-impl<B: Backend> Drop for DescSetLayout<B> {
+impl Drop for DescSetLayout {
     fn drop(&mut self) {
         let device = &self.device.borrow().device;
         device.destroy_descriptor_set_layout(self.layout.take().unwrap());
     }
 }
 
-struct DescSet<B: Backend> {
-    set: Option<B::DescriptorSet>,
-    layout: DescSetLayout<B>,
+struct DescSet {
+    set: Option<<BackendImpl as Backend>::DescriptorSet>,
+    layout: DescSetLayout,
 }
 
 struct DescSetWrite<W> {
@@ -721,14 +633,14 @@ struct DescSetWrite<W> {
     descriptors: W,
 }
 
-impl<B: Backend> DescSet<B> {
+impl DescSet {
     fn write_to_state<'a, 'b: 'a, W>(
         &'b mut self,
         write: Vec<DescSetWrite<W>>,
-        device: &mut B::Device,
+        device: &mut <BackendImpl as Backend>::Device,
     ) where
         W: IntoIterator,
-        W::Item: std::borrow::Borrow<pso::Descriptor<'a, B>>,
+        W::Item: std::borrow::Borrow<pso::Descriptor<'a, BackendImpl>>,
     {
         let set = self.set.as_ref().unwrap();
         let write: Vec<_> = write
@@ -743,26 +655,26 @@ impl<B: Backend> DescSet<B> {
         device.write_descriptor_sets(write);
     }
 
-    fn get_layout(&self) -> &B::DescriptorSetLayout {
+    fn get_layout(&self) -> &<BackendImpl as Backend>::DescriptorSetLayout {
         self.layout.layout.as_ref().unwrap()
     }
 }
 
-struct PipelineState<B: Backend> {
-    pipeline: Option<B::GraphicsPipeline>,
-    pipeline_layout: Option<B::PipelineLayout>,
-    device: Rc<RefCell<DeviceState<B>>>,
+struct PipelineState {
+    pipeline: Option<<BackendImpl as Backend>::GraphicsPipeline>,
+    pipeline_layout: Option<<BackendImpl as Backend>::PipelineLayout>,
+    device: Rc<RefCell<DeviceState>>,
 }
 
-impl<B: Backend> PipelineState<B> {
+impl PipelineState {
     fn new<IS>(
         desc_layouts: IS,
-        render_pass: &B::RenderPass,
-        device_ptr: Rc<RefCell<DeviceState<B>>>,
+        render_pass: &<BackendImpl as Backend>::RenderPass,
+        device_ptr: Rc<RefCell<DeviceState>>,
     ) -> Self
     where
         IS: IntoIterator,
-        IS::Item: std::borrow::Borrow<B::DescriptorSetLayout>,
+        IS::Item: std::borrow::Borrow<<BackendImpl as Backend>::DescriptorSetLayout>,
     {
         let device = &device_ptr.borrow().device;
         let pipeline_layout = device
@@ -793,12 +705,12 @@ impl<B: Backend> PipelineState<B> {
 
             let pipeline = {
                 let (vs_entry, fs_entry) = (
-                    pso::EntryPoint::<B> {
+                    pso::EntryPoint::<BackendImpl> {
                         entry: ENTRY_NAME,
                         module: &vs_module,
                         specialization: pso::Specialization::default(),
                     },
-                    pso::EntryPoint::<B> {
+                    pso::EntryPoint::<BackendImpl> {
                         entry: ENTRY_NAME,
                         module: &fs_module,
                         specialization: pso::Specialization::default(),
@@ -861,7 +773,7 @@ impl<B: Backend> PipelineState<B> {
     }
 }
 
-impl<B: Backend> Drop for PipelineState<B> {
+impl Drop for PipelineState {
     fn drop(&mut self) {
         let device = &self.device.borrow().device;
         device.destroy_graphics_pipeline(self.pipeline.take().unwrap());
@@ -869,16 +781,16 @@ impl<B: Backend> Drop for PipelineState<B> {
     }
 }
 
-struct SwapchainState<B: Backend> {
-    swapchain: Option<B::Swapchain>,
-    backbuffer: Option<Backbuffer<B>>,
-    device: Rc<RefCell<DeviceState<B>>>,
+struct SwapchainState {
+    swapchain: Option<<BackendImpl as Backend>::Swapchain>,
+    backbuffer: Option<Backbuffer<BackendImpl>>,
+    device: Rc<RefCell<DeviceState>>,
     extent: i::Extent,
     format: f::Format,
 }
 
-impl<B: Backend> SwapchainState<B> {
-    fn new(backend: &mut BackendState<B>, device: Rc<RefCell<DeviceState<B>>>) -> Self {
+impl SwapchainState {
+    fn new(backend: &mut BackendState, device: Rc<RefCell<DeviceState>>) -> Self {
         let (caps, formats, _present_modes) = backend
             .surface
             .compatibility(&device.borrow().physical_device);
@@ -911,7 +823,7 @@ impl<B: Backend> SwapchainState<B> {
     }
 }
 
-impl<B: Backend> Drop for SwapchainState<B> {
+impl Drop for SwapchainState {
     fn drop(&mut self) {
         self.device
             .borrow()
@@ -920,15 +832,15 @@ impl<B: Backend> Drop for SwapchainState<B> {
     }
 }
 
-struct FramebufferState<B: Backend> {
-    framebuffers: Option<Vec<B::Framebuffer>>,
-    framebuffer_fences: Option<Vec<B::Fence>>,
-    command_pools: Option<Vec<hal::CommandPool<B, hal::Graphics>>>,
-    frame_images: Option<Vec<(B::Image, B::ImageView)>>,
-    acquire_semaphores: Option<Vec<B::Semaphore>>,
-    present_semaphores: Option<Vec<B::Semaphore>>,
+struct FramebufferState {
+    framebuffers: Option<Vec<<BackendImpl as Backend>::Framebuffer>>,
+    framebuffer_fences: Option<Vec<<BackendImpl as Backend>::Fence>>,
+    command_pools: Option<Vec<hal::CommandPool<BackendImpl, hal::Graphics>>>,
+    frame_images: Option<Vec<(<BackendImpl as Backend>::Image, <BackendImpl as Backend>::ImageView)>>,
+    acquire_semaphores: Option<Vec<<BackendImpl as Backend>::Semaphore>>,
+    present_semaphores: Option<Vec<<BackendImpl as Backend>::Semaphore>>,
     last_ref: usize,
-    device: Rc<RefCell<DeviceState<B>>>,
+    device: Rc<RefCell<DeviceState>>,
 }
 
 impl<B: Backend> FramebufferState<B> {
@@ -1096,6 +1008,49 @@ impl<B: Backend> Drop for FramebufferState<B> {
     }
 }
 
+impl<B: Backend> Drop for RendererState<B> {
+    fn drop(&mut self) {
+        self.device.borrow().device.wait_idle().unwrap();
+        self.device
+            .borrow()
+            .device
+            .destroy_descriptor_pool(self.uniform_desc_pool.take().unwrap());
+        self.swapchain.take();
+    }
+}
+
+struct BackendState {
+    surface: <BackendImpl as Backend>::Surface,
+    adapter: AdapterState,
+    window: winit::Window,
+    events_loop: winit::EventsLoop
+}
+
+impl BackendState {
+    pub fn new(instance: back::Instance, window_dimensions: Extent2D) -> Self {
+
+        let events_loop = winit::EventsLoop::new();
+
+        let window = winit::WindowBuilder::new()
+            .with_dimensions(winit::dpi::LogicalSize::new(
+                window_dimensions.width as _,
+                window_dimensions.height as _,
+            ))
+            .with_title("quad".to_string())
+            .build(&events_loop)
+            .unwrap();
+
+        let surface = instance.create_surface(&window);
+        let mut adapters = instance.enumerate_adapters();
+        BackendState {
+            adapter: AdapterState::new(&mut adapters),
+            surface,
+            window,
+            events_loop
+        }
+    }
+}
+
 #[cfg(any(
     feature = "vulkan",
     feature = "dx12",
@@ -1160,18 +1115,17 @@ fn main() {
         Vertex::new(0.8660254037844387, -0.5),
     ];
 
-    let mut window = WindowState::new();
-    let (backend, _instance) = create_backend(&mut window);
+    let instance = back::Instance::create("gfx-rs quad", 1);
+    let backend = BackendState::new(instance, DIMS);
 
-    let mut renderer_state = RendererState::new(backend, window, &quad);
+    let mut renderer_state = RendererState::new(backend, &quad);
     renderer_state.mainloop();
 }
 
 #[cfg(not(any(
     feature = "vulkan",
     feature = "dx12",
-    feature = "metal",
-    feature = "gl"
+    feature = "metal"
 )))]
 fn main() {
     println!("You need to enable the native API feature (vulkan/metal) in order to test the LL");
