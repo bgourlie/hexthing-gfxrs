@@ -339,7 +339,7 @@ struct AdapterState {
 }
 
 impl AdapterState {
-    fn new(adapters: &mut Vec<Adapter>) -> Self {
+    fn new(adapters: &mut Vec<Adapter<BackendImpl>>) -> Self {
         print!("Chosen: ");
 
         for adapter in adapters.iter() {
@@ -368,7 +368,7 @@ struct DeviceState {
 }
 
 impl DeviceState {
-    fn new(adapter: Adapter, surface: &<BackendImpl as Backend>::Surface) -> Self {
+    fn new(adapter: Adapter<BackendImpl>, surface: &<BackendImpl as Backend>::Surface) -> Self {
         let (device, queues) = adapter
             .open_with::<_, ::hal::Graphics>(1, |family| surface.supports_queue_family(family))
             .unwrap();
@@ -836,18 +836,23 @@ struct FramebufferState {
     framebuffers: Option<Vec<<BackendImpl as Backend>::Framebuffer>>,
     framebuffer_fences: Option<Vec<<BackendImpl as Backend>::Fence>>,
     command_pools: Option<Vec<hal::CommandPool<BackendImpl, hal::Graphics>>>,
-    frame_images: Option<Vec<(<BackendImpl as Backend>::Image, <BackendImpl as Backend>::ImageView)>>,
+    frame_images: Option<
+        Vec<(
+            <BackendImpl as Backend>::Image,
+            <BackendImpl as Backend>::ImageView,
+        )>,
+    >,
     acquire_semaphores: Option<Vec<<BackendImpl as Backend>::Semaphore>>,
     present_semaphores: Option<Vec<<BackendImpl as Backend>::Semaphore>>,
     last_ref: usize,
     device: Rc<RefCell<DeviceState>>,
 }
 
-impl<B: Backend> FramebufferState<B> {
+impl FramebufferState {
     fn new(
-        device: Rc<RefCell<DeviceState<B>>>,
-        render_pass: &RenderPassState<B>,
-        swapchain: &mut SwapchainState<B>,
+        device: Rc<RefCell<DeviceState>>,
+        render_pass: &RenderPassState,
+        swapchain: &mut SwapchainState,
     ) -> Self {
         let (frame_images, framebuffers) = match swapchain.backbuffer.take().unwrap() {
             Backbuffer::Images(images) => {
@@ -898,10 +903,10 @@ impl<B: Backend> FramebufferState<B> {
             1 // GL can have zero
         };
 
-        let mut fences: Vec<B::Fence> = vec![];
-        let mut command_pools: Vec<hal::CommandPool<B, hal::Graphics>> = vec![];
-        let mut acquire_semaphores: Vec<B::Semaphore> = vec![];
-        let mut present_semaphores: Vec<B::Semaphore> = vec![];
+        let mut fences: Vec<<BackendImpl as Backend>::Fence> = vec![];
+        let mut command_pools: Vec<hal::CommandPool<BackendImpl, hal::Graphics>> = vec![];
+        let mut acquire_semaphores: Vec<<BackendImpl as Backend>::Semaphore> = vec![];
+        let mut present_semaphores: Vec<<BackendImpl as Backend>::Semaphore> = vec![];
 
         for _ in 0..iter_count {
             fences.push(device.borrow().device.create_fence(true).unwrap());
@@ -949,11 +954,14 @@ impl<B: Backend> FramebufferState<B> {
         sem_index: Option<usize>,
     ) -> (
         Option<(
-            &mut B::Fence,
-            &mut B::Framebuffer,
-            &mut hal::CommandPool<B, ::hal::Graphics>,
+            &mut <BackendImpl as Backend>::Fence,
+            &mut <BackendImpl as Backend>::Framebuffer,
+            &mut hal::CommandPool<BackendImpl, ::hal::Graphics>,
         )>,
-        Option<(&mut B::Semaphore, &mut B::Semaphore)>,
+        Option<(
+            &mut <BackendImpl as Backend>::Semaphore,
+            &mut <BackendImpl as Backend>::Semaphore,
+        )>,
     ) {
         (
             if let Some(fid) = frame_id {
@@ -977,7 +985,7 @@ impl<B: Backend> FramebufferState<B> {
     }
 }
 
-impl<B: Backend> Drop for FramebufferState<B> {
+impl Drop for FramebufferState {
     fn drop(&mut self) {
         let device = &self.device.borrow().device;
 
@@ -1008,7 +1016,7 @@ impl<B: Backend> Drop for FramebufferState<B> {
     }
 }
 
-impl<B: Backend> Drop for RendererState<B> {
+impl Drop for RendererState {
     fn drop(&mut self) {
         self.device.borrow().device.wait_idle().unwrap();
         self.device
@@ -1023,12 +1031,12 @@ struct BackendState {
     surface: <BackendImpl as Backend>::Surface,
     adapter: AdapterState,
     window: winit::Window,
-    events_loop: winit::EventsLoop
+    events_loop: winit::EventsLoop,
 }
 
 impl BackendState {
-    pub fn new(instance: back::Instance, window_dimensions: Extent2D) -> Self {
-
+    pub fn new(window_dimensions: Extent2D) -> Self {
+        let instance = back::Instance::create("gfx-rs quad", 1);
         let events_loop = winit::EventsLoop::new();
 
         let window = winit::WindowBuilder::new()
@@ -1046,7 +1054,7 @@ impl BackendState {
             adapter: AdapterState::new(&mut adapters),
             surface,
             window,
-            events_loop
+            events_loop,
         }
     }
 }
@@ -1115,18 +1123,13 @@ fn main() {
         Vertex::new(0.8660254037844387, -0.5),
     ];
 
-    let instance = back::Instance::create("gfx-rs quad", 1);
-    let backend = BackendState::new(instance, DIMS);
+    let backend = BackendState::new(DIMS);
 
     let mut renderer_state = RendererState::new(backend, &quad);
     renderer_state.mainloop();
 }
 
-#[cfg(not(any(
-    feature = "vulkan",
-    feature = "dx12",
-    feature = "metal"
-)))]
+#[cfg(not(any(feature = "vulkan", feature = "dx12", feature = "metal")))]
 fn main() {
     println!("You need to enable the native API feature (vulkan/metal) in order to test the LL");
 }
