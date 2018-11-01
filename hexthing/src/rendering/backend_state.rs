@@ -16,8 +16,8 @@ impl BackendState {
 
         let window = winit::WindowBuilder::new()
             .with_dimensions(winit::dpi::LogicalSize::new(
-                window_dimensions.width as _,
-                window_dimensions.height as _,
+                f64::from(window_dimensions.width),
+                f64::from(window_dimensions.height),
             ))
             .with_title("quad".to_owned())
             .build(&events_loop)

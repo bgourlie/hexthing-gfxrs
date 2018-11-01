@@ -12,7 +12,7 @@ impl RenderPassState {
     pub fn new(swapchain: &SwapchainState, device: Rc<RefCell<DeviceState>>) -> Self {
         let render_pass = {
             let attachment = pass::Attachment {
-                format: Some(swapchain.format.clone()),
+                format: Some(swapchain.format),
                 samples: 1,
                 ops: pass::AttachmentOps::new(
                     pass::AttachmentLoadOp::Clear,

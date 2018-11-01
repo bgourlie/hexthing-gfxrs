@@ -64,7 +64,7 @@ impl RendererState {
         );
 
         let uniform = Uniform::new(
-            Rc::clone(&device),
+            &device,
             &backend.adapter.memory_types,
             &[1.0f32, 0.0f32, 0.0f32, 1.0f32],
             uniform_desc,
@@ -84,7 +84,7 @@ impl RendererState {
         let pipeline = PipelineState::new(
             vec![uniform.get_layout()],
             render_pass.render_pass.as_ref().unwrap(),
-            Rc::clone(&device),
+            &device,
         );
 
         let viewport = RendererState::create_viewport(swapchain.as_ref().unwrap());
@@ -127,7 +127,7 @@ impl RendererState {
         let pipeline = PipelineState::new(
             vec![self.uniform.get_layout()],
             self.render_pass.render_pass.as_ref().unwrap(),
-            Rc::clone(&self.device),
+            &self.device,
         );
 
         self.pipelines.clear();
@@ -232,7 +232,7 @@ impl RendererState {
             // Rendering
             let submit = {
                 let mut cmd_buffer = command_pool.acquire_command_buffer(false);
-                let pipeline = self.pipelines.get("main").unwrap();
+                let pipeline = &self.pipelines["main"];
                 cmd_buffer.set_viewports(0, &[self.viewport.clone()]);
                 cmd_buffer.set_scissors(0, &[self.viewport.rect]);
                 cmd_buffer.bind_graphics_pipeline(pipeline.pipeline.as_ref().unwrap());
@@ -266,7 +266,7 @@ impl RendererState {
             self.device.borrow_mut().queues.queues[0].submit(submission, Some(framebuffer_fence));
 
             // present frame
-            if let Err(_) = self
+            if self
                 .swapchain
                 .as_ref()
                 .unwrap()
@@ -277,7 +277,9 @@ impl RendererState {
                     &mut self.device.borrow_mut().queues.queues[0],
                     frame,
                     Some(&*image_present),
-                ) {
+                )
+                .is_err()
+            {
                 recreate_swapchain = true;
                 continue;
             }

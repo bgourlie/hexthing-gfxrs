@@ -21,7 +21,7 @@ impl SwapchainState {
             formats
                 .iter()
                 .find(|format| format.base_format().1 == format::ChannelType::Srgb)
-                .map(|format| *format)
+                .cloned()
                 .unwrap_or(formats[0])
         });
 
@@ -34,14 +34,13 @@ impl SwapchainState {
             .create_swapchain(&mut backend.surface, swap_config, None)
             .expect("Can't create swapchain");
 
-        let swapchain = SwapchainState {
+        SwapchainState {
             swapchain: Some(swapchain),
             backbuffer: Some(backbuffer),
             device,
             extent,
             format,
-        };
-        swapchain
+        }
     }
 }
 

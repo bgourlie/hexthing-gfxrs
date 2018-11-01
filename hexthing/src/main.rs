@@ -37,6 +37,8 @@ const DIMS: Extent2D = Extent2D {
     height: 768,
 };
 
+#[allow(clippy::unreadable_literal)]
+#[allow(clippy::excessive_precision)]
 #[cfg(any(
     feature = "vulkan",
     feature = "dx12",

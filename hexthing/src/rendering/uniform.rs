@@ -11,7 +11,7 @@ pub struct Uniform {
 
 impl Uniform {
     pub fn new<T>(
-        device: Rc<RefCell<DeviceState>>,
+        device: &Rc<RefCell<DeviceState>>,
         memory_types: &[hal::MemoryType],
         data: &[T],
         mut desc: DescSet,

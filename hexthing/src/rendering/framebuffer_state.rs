@@ -72,7 +72,7 @@ impl FramebufferState {
             Backbuffer::Framebuffer(fbo) => (Vec::new(), vec![fbo]),
         };
 
-        let iter_count = if frame_images.len() != 0 {
+        let iter_count = if !frame_images.is_empty() {
             frame_images.len()
         } else {
             1 // GL can have zero

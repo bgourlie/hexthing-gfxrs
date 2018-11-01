@@ -23,7 +23,7 @@ impl PipelineState {
     pub fn new<IS>(
         desc_layouts: IS,
         render_pass: &RenderPassImpl,
-        device_ptr: Rc<RefCell<DeviceState>>,
+        device_ptr: &Rc<RefCell<DeviceState>>,
     ) -> Self
     where
         IS: IntoIterator,
