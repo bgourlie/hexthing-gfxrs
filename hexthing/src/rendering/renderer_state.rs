@@ -232,7 +232,7 @@ impl RendererState {
             // Rendering
             let submit = {
                 let mut cmd_buffer = command_pool.acquire_command_buffer(false);
-                let pipeline = &self.pipelines["main"];
+                let pipeline = self.pipelines.get("main").expect("Pipeline not found");
                 cmd_buffer.set_viewports(0, &[self.viewport.clone()]);
                 cmd_buffer.set_scissors(0, &[self.viewport.rect]);
                 cmd_buffer.bind_graphics_pipeline(pipeline.pipeline.as_ref().unwrap());
